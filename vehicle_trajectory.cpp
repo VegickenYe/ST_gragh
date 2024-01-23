@@ -11,7 +11,7 @@ struct Point {
 
 class Vehicle {
 public:
-    Vehicle(double length) : length(length), x(0), y(0), yaw(0), v(0), steering_angle(0) {}
+    Vehicle(double length) : length(length), x(0), y(0.375), yaw(0), v(0), steering_angle(0) {}
 
     void update(double dt) {
         // 更新位置和方向
