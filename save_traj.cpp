@@ -23,6 +23,31 @@ void writevectorToFile(const std::vector<Eigen::Vector2i>& vec, const std::strin
     }
 }
 
+void saveToCSV(const TrajectoryData& data, int index, const std::string& filename) {
+    std::ofstream file(filename);
+
+    if (file.is_open()) {
+        // 写入表头
+        file << "X,Y,Yaw,Timestamp\n";
+
+        // 获取当前索引下的数据大小
+        size_t dataSize = data.trajectory[index].size();
+
+        // 写入数据
+        for (size_t i = 0; i < dataSize; ++i) {
+            file << data.trajectory[index][i].x() << "," 
+                 << data.trajectory[index][i].y() << ","
+                 << data.yaw[index][i] << "," 
+                 << data.timestamp[index][i] << "\n";
+        }
+
+        file.close();
+    } else {
+        std::cerr << "Unable to open file " << filename << std::endl;
+    }
+}
+
+
 std::vector<Eigen::Vector2d> readTrajectory(const std::string& file_name) {
     std::ifstream file(file_name);
     std::vector<Eigen::Vector2d> trajectory;
@@ -158,7 +183,7 @@ double* getYaw(TrajectoryData data, int sur_id, double pt_time) {
 }
 
 // bool searchTime(std::vector<std::vector<double>> &flat_trajs, double &start_world_time)
-Graph searchTime(TrajectoryData data,double &start_world_time,KinoTrajData &flat_trajs,std::vector<Eigen::Vector2i> &Find_s_t)
+Graph searchTime(TrajectoryData& data,double &start_world_time,KinoTrajData &flat_trajs,std::vector<Eigen::Vector2i> &Find_s_t)
 {
     std::cout<<"世界开始时间(以轨迹1为参考时间)"<<start_world_time<<std::endl;
     /*-------Preliminaries: Judge the cars' moving direction------------*/
@@ -231,9 +256,9 @@ Graph searchTime(TrajectoryData data,double &start_world_time,KinoTrajData &flat
     {
         if(sur_id == car_id_)
             continue;
-
+        std::cout<<"1"<<std::endl;
         double traj_start_time = data.timestamp[sur_id][0];
-        double traj_end_time = data.timestamp[sur_id][end_index];
+        double traj_end_time = data.timestamp[sur_id].back();
         std::cout<<"traj_end_time: "<<traj_end_time<<std::endl;
         for(double world_t = start_world_time; world_t <= traj_end_time + 1e-3; world_t += time_resolution_)
         {
@@ -262,6 +287,7 @@ Graph searchTime(TrajectoryData data,double &start_world_time,KinoTrajData &flat
             // std::cout<<"traj_start_time:"<<traj_start_time<<std::endl;
             // std::cout<<"traj_end_time:"<<traj_end_time<<std::endl;
             // std::cout<<"pt_time:"<<pt_time<<std::endl;
+
             Eigen::Vector2d* surround_ptr = getPos(data,sur_id,pt_time);
             Eigen::Vector2d surround_p = *surround_ptr;
             // if((sur_id==2)&&(surround_p.norm()<=1e-3)){
@@ -303,14 +329,7 @@ Graph searchTime(TrajectoryData data,double &start_world_time,KinoTrajData &flat
                     //     std::cout<<"discrete_positionList[s_int] "<<s_int<<" "<<discrete_positionList[s_int]<<std::endl;
                     // }
                     
-                    // char ch;
-                    // std::cout << "Press 'q' and then Enter to continue: ";
-                    // std::cin >> ch;
 
-                    // while (ch != 'q') {
-                    //     std::cout << "You pressed '" << ch << "'. Press 'q' and then Enter to continue: ";
-                    //     std::cin >> ch;
-                    // }
                     Eigen::Vector3i s_t_collision(time_int, s_int, sur_id);
                     // std::cout<<"sur_id "<<sur_id<<std::endl;
                     // std::cout<<"point_id "<<point_id<<std::endl;
@@ -592,33 +611,44 @@ Graph searchTime(TrajectoryData data,double &start_world_time,KinoTrajData &flat
             }
             std::cout<<"总用时 "<<shot_start_t+shot_duration<<std::endl;
             flat_trajs.clear();
-            
+
             Eigen::Vector2d last_last_pos = data.trajectory[car_id_].at(end_index - 1);
             Eigen::Vector2d last_pos = data.trajectory[car_id_].at(end_index);
             Eigen::Vector4d segment_start_state, segment_end_state;
             segment_start_state << data.trajectory[car_id_][0],data.yaw[car_id_][0],initial_vel_;
 
             //middle_nodes_.back()->end_t是前面搜索的点，不能用one_shot直接生成的点
-            double segment_duration = middle_nodes_.back()->end_t + shot_duration;
-            double sampletime = 0.1;
+            double segment_duration = shot_start_t + shot_duration;
+            double sampletime = 0.02;
             if(sampletime > segment_duration)
+            {
                 sampletime = segment_duration / 2.0;
                 std::cout << "太小了!!!!!!!!!!!!!!!!" << std::endl;
-            
+            }
             std::vector<Eigen::Vector3d> traj_pts;
             std::vector<double> thetas;
             double samplet;
+            TrajectoryData newdata;
             for(samplet = sampletime; samplet < segment_duration; samplet += sampletime)
             {
                 double roundedTime = roundToNearestMultiple(samplet,time_resolution_);
                 Eigen::Vector3d round_pos = CalculateInitPos(roundedTime, start_direction,data); 
-                data.trajectory[car_id_].clear();
-                data.timestamp[car_id_].clear();
-                data.yaw[car_id_].clear();
                 Eigen::Vector2d point=round_pos.head(2);
-                data.trajectory[car_id_].push_back(point);
-                data.timestamp[car_id_].push_back(roundedTime);
-                data.yaw[car_id_].push_back(round_pos(2));
+                newdata.trajectory[car_id_].push_back(point);
+                newdata.timestamp[car_id_].push_back(roundedTime+data.timestamp[car_id_].at(0)-sampletime);
+                newdata.yaw[car_id_].push_back(round_pos(2));
+                
+                // std::cout<<"roundedTime"<<roundedTime+data.timestamp[car_id_].at(0)-sampletime<<std::endl;
+                // std::cout<<"point"<<point<<std::endl;
+                // std::cout<<"yaw"<<round_pos(2)<<std::endl;
+                // char ch;
+                // std::cout << "Press 'q' and then Enter to continue: ";
+                // std::cin >> ch;
+
+                // while (ch != 'q') {
+                //     std::cout << "You pressed '" << ch << "'. Press 'q' and then Enter to continue: ";
+                //     std::cin >> ch;
+                // }
 
                 Eigen::Vector3d sample_pos = CalculateInitPos(samplet, start_direction,data);
                 Eigen::Vector2d traj_pt_pos = sample_pos.head(2);
@@ -635,10 +665,16 @@ Graph searchTime(TrajectoryData data,double &start_world_time,KinoTrajData &flat
             thetas.push_back(normalize_angle(segment_end_yaw));
 
             double roundedTime = roundToNearestMultiple(samplet,time_resolution_);
-            data.trajectory[car_id_].push_back(Eigen::Vector2d(last_pos(0), last_pos(1)));
-            data.timestamp[car_id_].push_back(roundedTime);
-            data.yaw[car_id_].push_back(normalize_angle(segment_end_yaw));            
+            newdata.trajectory[car_id_].push_back(Eigen::Vector2d(last_pos(0), last_pos(1)));
+            newdata.timestamp[car_id_].push_back(roundedTime+data.timestamp[car_id_].at(0)-sampletime);
+            newdata.yaw[car_id_].push_back(normalize_angle(segment_end_yaw));  
 
+            data.trajectory[car_id_].clear();
+            data.timestamp[car_id_].clear();
+            data.yaw[car_id_].clear();
+            data.trajectory[car_id_]=newdata.trajectory[car_id_];
+            data.timestamp[car_id_]=newdata.timestamp[car_id_];
+            data.yaw[car_id_]=newdata.yaw[car_id_];
             std::cout<<"更新轨迹结束"<<std::endl;
 
             // Eigen::Vector4d segment_start_state, segment_end_state;
@@ -1019,7 +1055,7 @@ int main() {
     //常量设置
     car_d_cr_ = -0.04; //雷达到中心点位置(前置为负数，后置为正数)
     distance_resolution_ = 0.01; //离散单位位置
-    car_width_=0.3; 
+    car_width_=0.36; 
     cars_num_ =3;
     // car_id_=2; 
     time_resolution_ = 0.02; //离散单位时间
@@ -1034,9 +1070,12 @@ int main() {
     non_siguav = 0.05;
 
     //时间异步（以画st图的轨迹为参考时间，影响上下移动）
-    bias1_=1.5;
-    bias2_=0.0;
-    bias3_=0.5;
+    // bias1_=0.16;
+    // bias2_=0.54;
+    // bias3_=0.2;
+    bias1_=0.16;
+    bias2_=0.4;
+    bias3_=0.2;    
 
     //轨迹的x和y的增长和缩小比例（影响斜率）
     trajectory2_x_ = 1.0; 
@@ -1102,6 +1141,16 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end - start;
         std::cout << "经过时间: " << elapsed.count() << " 秒" << std::endl;
+        
+        // char ch;
+        // std::cout << "Press 'q' and then Enter to continue: ";
+        // std::cin >> ch;
+
+        // while (ch != 'q') {
+        //     std::cout << "You pressed '" << ch << "'. Press 'q' and then Enter to continue: ";
+        //     std::cin >> ch;
+        // }
+
 
         std::ostringstream filename1,filename2;
         filename1 << "s_t_graph" << i << ".txt";
@@ -1113,9 +1162,24 @@ int main() {
         writeGraphToFile(graph,currentFilename1);
         writevectorToFile(Find_s_t,currentFilename2);
     }
+
+    saveToCSV(data, 0, "newtrajectory0.csv");
+    saveToCSV(data, 1, "newtrajectory1.csv");
+    saveToCSV(data, 2, "newtrajectory2.csv");
+
     // std::string filename="s_t_graph.txt";
     // writeGraphToFile(graph,filename);
     // writevectorToFile(Find_s_t,"Find_s_t.txt");
     
     return 0;
 }
+
+
+    // char ch;
+    // std::cout << "Press 'q' and then Enter to continue: ";
+    // std::cin >> ch;
+
+    // while (ch != 'q') {
+    //     std::cout << "You pressed '" << ch << "'. Press 'q' and then Enter to continue: ";
+    //     std::cin >> ch;
+    // }
